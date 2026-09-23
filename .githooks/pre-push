@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# The full check set before anything leaves this working copy.
+#
+# CI repeats all of this in a clean environment, which is the run that counts.
+# This exists so a broken push is caught here rather than after the fact.
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ]; then
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+cd "$ROOT"
+
+./scripts/check.sh

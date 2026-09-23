@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# Fast, offline feedback before a commit is recorded.
+#
+# This is deliberately cheap: the repository contract and the formatter. It must
+# stay fast enough that nobody is tempted to skip it. The full check set runs in
+# `pre-push` and in CI.
+#
+# Hooks are feedback, not authority. `git commit --no-verify` bypasses this, so
+# a green hook proves less than a green CI run.
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ]; then
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+cd "$ROOT"
+
+./scripts/check-repo.sh
+cargo fmt --all --check

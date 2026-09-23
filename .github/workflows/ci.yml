@@ -18,8 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  contract:
+    name: Repository contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # A check that cannot fail proves nothing, so the checker's own self-test
+      # runs first. It plants a home path, a `.env`, a credential and a license
+      # capture in throwaway repositories and asserts each one is rejected.
+      - name: Contract self-test
+        run: ./scripts/check-repo.sh --self-test
+      - name: Repository contract
+        run: ./scripts/check-repo.sh
+
   checks:
-    name: Repository checks
+    name: Checks
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -34,30 +47,42 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
-      - run: cargo fmt --all --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - run: cargo test --locked --all-targets
-      - run: cargo test --locked --all-targets --all-features
-      - name: Documentation
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --all-features --no-deps
+      # The canonical set, defined once in the script so CI, the docs and the
+      # pre-push hook cannot drift apart.
+      - name: Canonical checks
+        run: ./scripts/check.sh
 
-  no-network-tests:
-    name: Tests are offline
+  dependency-policy:
+    name: Dependency policy
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # Advisories block. There are 508 packages in the lock file, so this is
+      # the check with real value here.
+      - name: Advisories (blocking)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
-          key: no-network
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
-      # Ordinary tests must not reach the network. This job fails closed if a
-      # test starts depending on it.
-      - run: cargo test --locked --all-features -- --test-threads=4
-        env:
-          AVDIUM_OFFLINE: '1'
+          command: check advisories
+          arguments: --all-features
+      # Licenses, bans and sources are advisory until the allow-list in
+      # deny.toml has been tightened against the real tree.
+      - name: Licenses, bans and sources (advisory)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check licenses bans sources
+          arguments: --all-features --warn
+
+  workflow-security:
+    name: Workflow security
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # `advanced-security: false` keeps the workflow at `contents: read`.
+      # Uploading SARIF would need `security-events: write`, which is a wider
+      # grant than this job requires.
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          annotations: true

@@ -109,7 +109,11 @@ jobs:
     with:
       version: ${{ needs.release-source.outputs.version }}
       publish: ${{ inputs.publish == true }}
-    secrets: inherit
+    # Explicit rather than `inherit`. `inherit` hands every repository secret to
+    # the callee, and the callee forwards to a third-party reusable workflow.
+    secrets:
+      AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+      AUR_KNOWN_HOSTS: ${{ secrets.AUR_KNOWN_HOSTS }}
 
   publish:
     name: Publish release

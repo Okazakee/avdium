@@ -57,7 +57,13 @@ jobs:
       targets: linux-amd64
       version: ${{ inputs.version }}
       publish: ${{ inputs.publish == true && inputs.version != '' }}
-    secrets: inherit
+    # Only the secrets this workflow actually needs, passed explicitly. The
+    # callee is a third-party reusable workflow, so it must not receive the
+    # whole repository secret store. `HOMEBREW_TAP_GITHUB_TOKEN` is not passed:
+    # `targets` is linux-amd64 only, so no Homebrew tap is published.
+    secrets:
+      AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+      AUR_KNOWN_HOSTS: ${{ secrets.AUR_KNOWN_HOSTS }}
 
   installation:
     name: Install (${{ matrix.image }})
