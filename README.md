@@ -51,8 +51,7 @@ The toolchain is pinned in `rust-toolchain.toml`. `Cargo.lock` is committed.
 
 That is the canonical set, and it is what CI runs. It is defined once, in
 `scripts/check.sh`, so this file, `CONTRIBUTING.md`, `AGENTS.md` and the CI
-workflow cannot drift apart. To install the hooks that call it, run
-`./scripts/install-hooks.sh`.
+workflow cannot drift apart.
 
 See `CONTRIBUTING.md` for the contribution workflow and `AGENTS.md` for
 operational constraints.

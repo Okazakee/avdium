@@ -13,38 +13,26 @@ Run the full set before opening a change:
 ./scripts/check.sh
 ```
 
-That script is the single definition of the check set. CI and the pre-push hook
-both call it, so the commands are not restated here.
+That script is the single definition of the check set, and CI calls it, so the
+commands are not restated here.
 
-It begins with `./scripts/check-repo.sh`, the repository contract. That asserts
-that required files exist, that no local machine state has been committed (a
-developer home path, a `.env`, a credential, or captured license text), that
-every action is pinned to a commit SHA, and that documented version facts agree
-with `Cargo.toml`. `./scripts/check-repo.sh --self-test` proves the check can
-fail, by planting each violation in a throwaway repository and asserting it is
-rejected.
+It starts with a tree scan. That scan exists because a developer home path once
+shipped inside a captured tool fixture, and removing it required rewriting
+history. It rejects an absolute home path, a secret-shaped filename, a
+credential, a private key, and captured Android SDK license text.
+`./scripts/check.sh --self-test` proves the scan can fail, by planting each
+violation in a throwaway repository and asserting it is rejected, and by
+asserting a clean tree still passes.
 
-## Local hooks
+## Dependency advisories
 
-```sh
-./scripts/install-hooks.sh
-```
-
-installs the tracked hooks by setting `core.hooksPath` locally. `pre-commit`
-runs the contract and `rustfmt`; `pre-push` runs the full set. The installer
-writes local configuration only. It never writes global configuration and never
-touches shell startup files.
-
-Hooks are feedback, not authority: `git commit --no-verify` bypasses them. CI is
-the authority, and a green hook proves less than a green CI run.
-
-## Dependency policy
-
-`deny.toml` holds the policy and CI enforces it. RustSec advisories fail the
-build. Licenses, duplicate versions and source policy report without failing
-until the allow-list has been reviewed further. The allow-list records why each
-entry is present; several are font or data licenses reached through egui and
-rustls rather than anything this project chose directly.
+CI runs `cargo deny check advisories` against `deny.toml`. Only advisories are
+configured. License, ban and source policy was evaluated and deliberately
+dropped: it meant auditing five licenses reached indirectly through egui's
+bundled fonts, arboard's Windows dependencies and the rustls root certificate
+bundle, which is more upkeep than a project this size should carry. `AGENTS.md`
+rule 7 already covers the obligation that matters, that reused third-party code
+keeps its original notices.
 
 ## Test layers
 

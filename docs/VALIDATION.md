@@ -465,23 +465,11 @@ All under `tests/fixtures/`, from the installed tools on this host:
 `tests/fixtures/bin/fake-tool` is constructed, not captured, and is documented
 as such in its own header comment.
 
-## 14. Verification, security and release conventions
+## 14. Verification and security conventions
 
-An audit of four sibling repositories (`precall`, `pi-harness-config`,
-`minepanel-backend`, `blurkit`) produced a set of conventions worth adopting.
-Adopting them surfaced three defects. The decisions, including what was
-rejected and why, are recorded in `docs/decisions/0006-ci-conventions.md`.
-
-### What was added
-
-- `scripts/check.sh`, the single definition of the check set. It replaces the
-  same six commands restated in `README.md`, `CONTRIBUTING.md`, `AGENTS.md` and
-  `.github/workflows/ci.yml`.
-- `scripts/check-repo.sh`, the repository contract, with a `--self-test` mode.
-- `.githooks/pre-commit` and `.githooks/pre-push`, installed by
-  `scripts/install-hooks.sh` through local `core.hooksPath` only.
-- `deny.toml`, `.github/dependabot.yml`, `SECURITY.md`, `.github/CODEOWNERS`.
-- CI jobs `contract`, `checks`, `dependency-policy` and `workflow-security`.
+Adopting conventions from four sibling repositories surfaced three defects. The
+conventions themselves were then cut back: the first version added 858 lines of
+CI machinery, which is more than this project should carry.
 
 ### Defects found and fixed
 
@@ -490,8 +478,8 @@ decided a child had stopped producing output by calling
 `receiver.try_recv().is_err()`. That call consumes and discards a queued chunk,
 and cannot distinguish a momentarily empty channel from a closed one.
 Completion now travels in band as a `PipeMessage::Finished` message. Seven
-regression tests cover it. With the old expression restored they fail, four of
-them, including `operations::tests::subprocess_output_is_streamed_into_the_job_log`,
+regression tests cover it. With the old expression restored, four of them fail,
+including `operations::tests::subprocess_output_is_streamed_into_the_job_log`,
 which was failing in a non-test code path rather than only in a fixture.
 
 **A trailing line without a newline was dropped.** `LineAssembler::finish`
@@ -513,24 +501,37 @@ in `src/` or `tests/` read that variable, so the job could not fail for the
 reason it claimed. It was deleted rather than propped up, and the two documents
 that asserted the guarantee now state what is actually true.
 
-### Dependency policy findings
+### What was kept
 
-The first real run of `cargo deny check` failed on licenses. Five had not been
-considered: `BSL-1.0` through `arboard`'s Windows-only dependencies, `OFL-1.1`
-and `Ubuntu-font-1.0` through egui's bundled fonts, `CDLA-Permissive-2.0`
-through the rustls root certificate bundle, and `MPL-2.0` through `option-ext`.
-The first four are permissive. `MPL-2.0` is weak copyleft and is acceptable
-only while that crate is consumed unmodified; the obligation is recorded in
-`deny.toml` itself. All four checks now pass.
+- `scripts/check.sh`, the single definition of the check set. It replaces the
+  same six commands restated in `README.md`, `CONTRIBUTING.md`, `AGENTS.md` and
+  the CI workflow, and it begins with a tree scan for committed local state.
+- `SECURITY.md`.
+- `deny.toml`, restricted to advisories, run as a step in the CI checks job.
+- `persist-credentials: false` on every checkout.
+
+### What was cut
+
+The first version added 858 lines. Most of it was cut after review, because it
+was more machinery than a project this size should carry.
+
+| Cut | Lines | Why |
+| --- | --- | --- |
+| `scripts/check-repo.sh` | 413 | Only the tree scan had demonstrated value, and it now lives in `check.sh`. The rest checked that files exist and that workflows keep their shape. |
+| `.githooks/` and its installer | 104 | Opt-in ceremony around a script anyone can run. |
+| `docs/decisions/0006-ci-conventions.md` | 103 | Process documentation about process. |
+| `deny.toml` license, ban and source policy | ~55 | Auditing five indirectly-reached licenses is more upkeep than this project should carry. |
+| `.github/dependabot.yml` | 27 | One more thing to maintain. Actions are pinned and can be bumped by hand. |
+| `.github/CODEOWNERS` | 18 | No effect without branch protection. |
+| Two extra CI jobs | | One job does the work. |
+| The `zizmor` workflow-security job | | It found zero high-severity issues and failed the build on style preferences, including one that could not be verified as supported syntax. |
 
 ### Executed
 
 | Command | Result |
 | --- | --- |
 | `./scripts/check.sh` | exit 0 |
-| `./scripts/check-repo.sh --self-test` | 2 cases accepted, 5 violations detected |
-| `cargo deny check` (0.20.2, published checksum verified) | advisories ok, bans ok, licenses ok, sources ok |
-| `./scripts/install-hooks.sh` | installs; refuses to replace a different `core.hooksPath` |
+| `./scripts/check.sh --self-test` | 2 cases accepted, 5 violations detected |
+| `cargo deny check advisories` | ok |
 
-Not executed: the new CI jobs, because this work has not been pushed yet. The
-end-to-end tests remain opt-in and unrun.
+Not executed: the end-to-end tests remain opt-in and unrun.

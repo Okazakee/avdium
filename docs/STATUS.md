@@ -96,14 +96,15 @@ created, so no test reads a scenario file at run time.
 
 | Command | Result |
 | --- | --- |
-| `./scripts/check-repo.sh` | contract clean; self-test passed |
+| `./scripts/check.sh --self-test` | 2 cases accepted, 5 violations detected |
+| `./scripts/check.sh` tree scan | clean |
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --locked --all-targets -- -D warnings` | clean |
 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | clean |
 | `cargo test --locked --all-targets` | 326 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
 | `cargo test --locked --all-targets --all-features` | 327 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
 | `RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps` | clean |
-| `cargo deny check` (advisories, bans, licenses, sources) | all ok |
+| `cargo deny check advisories` | ok |
 | `avdium --version`, `paths`, `tools`, `devices`, `doctor --probe`, `capabilities` | exercised against the real host, read-only |
 | GUI launch | window opened on the live Wayland session; 5 screenshots captured |
 

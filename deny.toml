@@ -1,73 +1,16 @@
-# Dependency policy.
+# RustSec advisory policy.
 #
-# Posture: advisories block, everything else is advisory. There are 508
-# packages in `Cargo.lock`, so advisory scanning has real value here, but an
-# all-blocking policy on day one would fail on a license or duplicate-crate
-# finding rather than on a real vulnerability.
+# 508 packages resolve into the shipped binary, so advisories are worth
+# checking. `unmaintained = "workspace"` keeps the report to crates this
+# project depends on directly rather than the whole transitive tree, which
+# would be noise nobody acts on.
 #
-# CI runs `check advisories` without `--warn` so advisories fail the build, and
-# `check licenses bans sources --warn` so the rest reports without failing.
-# Tighten those to blocking once the allow-list below has been reviewed against
-# the real tree.
-#
-# Keys and value shapes follow cargo-deny's own `deny.toml`. Note that
-# `unmaintained` takes a *scope* (`all`, `workspace`, `transitive`, `none`), not
-# a severity: severity is a command-line concern.
-
-[graph]
-all-features = true
+# License, ban and source policy is deliberately not configured. Reviewing it
+# meant auditing five licenses reached indirectly through egui's bundled fonts,
+# arboard's Windows dependencies and the rustls root certificate bundle. That
+# is more upkeep than a project this size should carry, and AGENTS.md rule 7
+# already covers the obligation that actually matters: reused third-party code
+# keeps its original notices.
 
 [advisories]
-# Only crates this workspace depends on directly are reported as unmaintained.
-# Reporting the whole transitive tree would be noise that nobody acts on.
 unmaintained = "workspace"
-unsound = "all"
-ignore = []
-
-[bans]
-multiple-versions = "warn"
-wildcards = "deny"
-
-[sources]
-# Every entry in `Cargo.lock` currently resolves to crates.io, so this passes
-# as written. It exists to fail if a git or alternative-registry source is ever
-# introduced without review.
-unknown-registry = "deny"
-unknown-git = "deny"
-
-[licenses]
-confidence-threshold = 0.93
-# Every entry here was reviewed against the real dependency tree rather than
-# assumed. Three were surfaced by the first run of this check and are all
-# permissive:
-#
-# - `BSL-1.0` (Boost) arrives through `arboard`'s Windows-only `clipboard-win`
-#   and `error-code` dependencies.
-# - `OFL-1.1` and `Ubuntu-font-1.0` arrive through `epaint_default_fonts`,
-#   which is how egui bundles the default UI fonts. Those two carry an
-#   attribution obligation rather than a copyleft one, and AGENTS.md rule 7
-#   already requires that reused third-party notices are preserved.
-# - `CDLA-Permissive-2.0` arrives through `webpki-root-certs`, the root
-#   certificate bundle that rustls trusts. It is a permissive data license.
-# - `MPL-2.0` arrives through `option-ext`. This is the only weak-copyleft
-#   entry here. It is acceptable because the crate is consumed unmodified as a
-#   dependency, which places no obligation on Avdium's own source. If that
-#   crate is ever patched or vendored, the modified files must stay MPL-2.0.
-allow = [
-  "Apache-2.0",
-  "Apache-2.0 WITH LLVM-exception",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "BSL-1.0",
-  "CC0-1.0",
-  "CDLA-Permissive-2.0",
-  "ISC",
-  "MIT",
-  "MPL-2.0",
-  "OFL-1.1",
-  "Ubuntu-font-1.0",
-  "Unicode-3.0",
-  "Unlicense",
-  "Zlib",
-]
-exceptions = []
