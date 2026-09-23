@@ -261,7 +261,36 @@ therefore unverified.
 | Which windowing backend winit selected | An X11-specific support claim. |
 | `android sdk list` output for the available (not installed) sections | The available-package picker. Only the installed section was captured in full. |
 
-## 9. Fixtures captured in this session
+## 9. Release build and dynamic dependencies
+
+`cargo build --locked --release` succeeded (329 crates, 1m04s wall). The result
+is a 13.4 MB stripped `ELF 64-bit LSB pie executable` that reports
+`avdium 0.1.0-dev`.
+
+`ldd` on the release binary shows the direct ELF dependencies are only:
+
+```
+libc.so.6
+libgcc_s.so.1
+libm.so.6
+```
+
+Every GUI library is loaded at runtime and is therefore invisible to ELF
+inspection. Each of the following was checked with `ldd` and is **not** linked:
+
+```
+libGL.so.1  libEGL.so.1  libwayland-client.so.0  libxkbcommon.so.0
+libxkbcommon-x11.so.0  libX11.so.6  libxcb.so.1  libfontconfig.so.1
+```
+
+This is why `native-packages.yaml` declares them under `libraries:` instead of
+relying on nFPM's automatic dependency detection. The list is now evidence-based
+rather than guessed, but the per-distribution package **names** are still
+unvalidated: no package has been built or installed. The release build also
+confirms that a Rust binary is not dependency-free, and that Java and QEMU are
+correctly absent from the dependency set.
+
+## 10. Fixtures captured in this session
 
 All under `tests/fixtures/`, from the installed tools on this host:
 
