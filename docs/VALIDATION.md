@@ -437,6 +437,15 @@ unvalidated: no package has been built or installed. The release build also
 confirms that a Rust binary is not dependency-free, and that Java and QEMU are
 correctly absent from the dependency set.
 
+## 10. Fixture normalization
+
+Captured tool output is verbatim except for one thing: **absolute home paths are
+replaced with `$HOME`**. A real capture contained the developer's home
+directory, and this repository is public, so the path is normalized in both the
+fixtures and the assertions that read them. Everything else in a fixture,
+including spacing, column widths and trailing whitespace, is exactly as the tool
+printed it.
+
 ## 10. Fixtures captured in this session
 
 All under `tests/fixtures/`, from the installed tools on this host:
