@@ -1,0 +1,80 @@
+name: Packaging
+
+# Stages the native package build. Nothing is published unless the caller
+# explicitly requests it AND a release destination exists. See PACKAGING.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - native-packages.yaml
+      - packaging/**
+      - .github/workflows/packaging.yml
+      - .github/workflows/release.yml
+  pull_request:
+    paths:
+      - native-packages.yaml
+      - packaging/**
+      - .github/workflows/packaging.yml
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to package (without the leading v)
+        type: string
+        required: true
+      publish:
+        description: Publish packages (requires an established destination and explicit authorization)
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      publish:
+        type: boolean
+        default: false
+    secrets:
+      AUR_SSH_KEY:
+        required: false
+      AUR_KNOWN_HOSTS:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    name: native-packages
+    permissions:
+      contents: write
+    # Pinned to native-packages v0.7.0. Interface verified from the pinned
+    # source: inputs are version, publish, targets, config, source-artifact,
+    # source-directory; secrets are AUR_SSH_KEY, AUR_KNOWN_HOSTS and
+    # HOMEBREW_TAP_GITHUB_TOKEN.
+    uses: crmne/native-packages/.github/workflows/package.yml@dc0cb1586894ca0239c53fd02d4da8064712671c # v0.7.0
+    with:
+      targets: linux-amd64
+      version: ${{ inputs.version }}
+      publish: ${{ inputs.publish == true && inputs.version != '' }}
+    secrets: inherit
+
+  installation:
+    name: Install (${{ matrix.image }})
+    needs: packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:13-slim', 'fedora:latest']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: native-packages
+          path: dist/native-packages
+      - name: Install, check runtime libraries, uninstall
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: bash packaging/test-install.sh "$IMAGE" dist/native-packages

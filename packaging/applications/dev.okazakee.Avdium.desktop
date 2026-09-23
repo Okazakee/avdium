@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Avdium
+GenericName=Android Virtual Device Manager
+Comment=Android emulators, without the IDE.
+Exec=avdium
+Icon=dev.okazakee.Avdium
+Terminal=false
+Categories=Development;Utility;
+Keywords=Android;Emulator;AVD;SDK;Virtual Device;
+StartupNotify=true
+StartupWMClass=dev.okazakee.Avdium

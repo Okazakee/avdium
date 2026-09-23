@@ -1,0 +1,91 @@
+# Package metadata for Avdium. This file is the single source of package
+# metadata; packaging workflows must not restate it.
+#
+# Schema and placeholder syntax verified against native-packages 0.7.0 at
+# dc0cb1586894ca0239c53fd02d4da8064712671c (docs/_guides/getting-started.md,
+# docs/_guides/building-packages.md, and the reference usage in zapfast at
+# 7e62788c587b811a451a3d57bb0ca85b049951be). No package has been published;
+# see docs/VALIDATION.md for what has and has not been executed.
+schema: 1
+tool:
+  version: 0.7.0
+  nfpm: 2.47.0
+
+# Libraries that are loaded at runtime and therefore missed by ELF linkage
+# inspection. Names differ by distribution.
+#
+# NOT YET VALIDATED: derived from the selected eframe feature set (glow
+# renderer, Wayland and X11 backends). These must be confirmed by the packaging
+# job's dependency check on each supported distribution before the first
+# release.
+libraries:
+  libGL.so.1:
+    deb: libgl1
+    rpm: mesa-libGL
+  libEGL.so.1:
+    deb: libegl1
+    rpm: mesa-libEGL
+  libwayland-client.so.0:
+    deb: libwayland-client0
+    rpm: libwayland-client
+  libxkbcommon.so.0:
+    deb: libxkbcommon0
+    rpm: libxkbcommon
+  libxkbcommon-x11.so.0:
+    deb: libxkbcommon-x11-0
+    rpm: libxkbcommon-x11
+  libX11.so.6:
+    deb: libx11-6
+    rpm: libX11
+  libxcb.so.1:
+    deb: libxcb1
+    rpm: libxcb
+  libfontconfig.so.1:
+    deb: libfontconfig1
+    rpm: fontconfig
+
+nfpm:
+  name: avdium
+  description: A native Android virtual device manager
+  maintainer: Okazakee <okazakee@proton.me>
+  license: MIT
+  contents:
+    - src: '@PAYLOAD@/avdium-v@VERSION@-@TARGET@/avdium'
+      dst: /usr/bin/avdium
+      file_info:
+        mode: 493 # 0755
+    - src: '@PAYLOAD@/avdium-v@VERSION@-@TARGET@/LICENSE'
+      dst: /usr/share/licenses/avdium/LICENSE
+      file_info:
+        mode: 420 # 0644
+    - src: '@PAYLOAD@/avdium-v@VERSION@-@TARGET@/README.md'
+      dst: /usr/share/doc/avdium/README.md
+      file_info:
+        mode: 420
+    - src: '@PAYLOAD@/avdium-v@VERSION@-@TARGET@/packaging/applications/dev.okazakee.Avdium.desktop'
+      dst: /usr/share/applications/dev.okazakee.Avdium.desktop
+      file_info:
+        mode: 420
+    - src: '@PAYLOAD@/avdium-v@VERSION@-@TARGET@/packaging/icons/dev.okazakee.Avdium.svg'
+      dst: /usr/share/icons/hicolor/scalable/apps/dev.okazakee.Avdium.svg
+      file_info:
+        mode: 420
+  overrides:
+    # The minimum glibc baseline is not chosen yet. Do not ship a `libc6 (>= x)`
+    # floor until a supported-host baseline is documented in PACKAGING.md.
+    deb:
+      depends:
+        - ca-certificates
+    rpm:
+      depends:
+        - ca-certificates
+
+targets:
+  linux-amd64:
+    platform: linux
+    arch: amd64
+    libc: glibc
+    formats: [deb, rpm]
+    input:
+      kind: file
+      local: dist/avdium

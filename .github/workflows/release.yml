@@ -1,0 +1,142 @@
+name: Release
+
+# Publication is intentionally inactive. A tag push does not publish anything:
+# this workflow only runs when dispatched, and the packaging job publishes only
+# when `publish` is explicitly true. See PACKAGING.md and AGENTS.md.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (without the leading v)
+        type: string
+        required: true
+      publish:
+        description: Publish packages and create the release (requires explicit authorization)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  release-source:
+    name: Tag is on main
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Validate version consistency
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          manifest=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$INPUT_VERSION" != "$manifest" ]; then
+            echo "Requested version $INPUT_VERSION does not match Cargo.toml ($manifest)." >&2
+            exit 1
+          fi
+          case "$INPUT_VERSION" in
+            *-dev) echo "Refusing to release a development version." >&2; exit 1 ;;
+          esac
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Require the commit on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "Release must be cut from a commit already on origin/main." >&2
+            exit 1
+          fi
+
+  build:
+    name: Build and package tarball
+    needs: release-source
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ env.TARGET }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ env.TARGET }}
+      - name: GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - run: cargo build --locked --release --target "$TARGET"
+      - name: Package tarball
+        env:
+          VERSION: ${{ needs.release-source.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="avdium-v${VERSION}-${TARGET}"
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/avdium" "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          cp --parents packaging/applications/dev.okazakee.Avdium.desktop \
+            packaging/icons/dev.okazakee.Avdium.svg "dist/$name/"
+          cp "dist/$name/avdium" dist/avdium
+          (cd dist && tar czf "$name.tar.gz" "$name")
+      - name: Attest tarball
+        uses: crmne/native-packages/.github/actions/attest@dc0cb1586894ca0239c53fd02d4da8064712671c # v0.7.0
+        with:
+          subject-path: dist/*.tar.gz
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ env.TARGET }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  packages:
+    name: Native packages
+    needs: [release-source, build]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/packaging.yml
+    with:
+      version: ${{ needs.release-source.outputs.version }}
+      publish: ${{ inputs.publish == true }}
+    secrets: inherit
+
+  publish:
+    name: Publish release
+    if: ${{ inputs.publish == true }}
+    needs: [release-source, build, packages]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.TARGET }}
+          path: dist
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+      - name: Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v${{ needs.release-source.outputs.version }}
+          name: Avdium v${{ needs.release-source.outputs.version }}
+          # Release notes describe implemented and validated behavior only.
+          body_path: docs/RELEASE-NOTES.md
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS

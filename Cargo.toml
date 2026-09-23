@@ -1,0 +1,100 @@
+[package]
+name = "avdium"
+version = "0.1.0-dev"
+edition = "2024"
+rust-version = "1.98"
+description = "A native Android virtual device manager."
+license = "MIT"
+# No `repository`/`homepage` yet: publication destinations are not established.
+# See PACKAGING.md. Do not add a URL that does not resolve.
+publish = false
+
+[lib]
+name = "avdium"
+path = "src/lib.rs"
+
+[[bin]]
+name = "avdium"
+path = "src/main.rs"
+
+[dependencies]
+# GUI. Default features are off so the feature set is explicit and reviewable.
+eframe = { version = "0.36", default-features = false, features = [
+    "accesskit",
+    "glow",
+    "default_fonts",
+    "links",
+    "wayland",
+    "x11",
+    "persistence",
+] }
+egui = "0.36"
+
+# Native file/folder dialogs. The XDG portal backend is used on Wayland; manual
+# path entry stays available when no portal is running.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+
+# XDG locations for Avdium's own settings, caches and logs.
+directories = "6"
+
+# CLI surface.
+clap = { version = "4.6", features = ["derive"] }
+
+# Serialization for settings, tool records and operation journals.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging. Avdium has no telemetry; logs stay local.
+log = "0.4"
+env_logger = "0.11"
+
+# Error plumbing. `anyhow` is used at boundaries; typed errors are used where
+# decisions depend on the error kind.
+anyhow = "1"
+
+# Blocking HTTP for background workers only. Never called from the UI thread.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json"] }
+
+# Catalog parsing. Namespace-aware, with external entity expansion disabled.
+quick-xml = "0.42"
+
+# Archive handling for tool provisioning (ZIP for classic tools, TAR/GZIP for
+# managed runtimes).
+zip = { version = "8", default-features = false, features = ["deflate", "time"] }
+flate2 = "1"
+tar = "0.4"
+
+# Integrity checks for downloaded artifacts.
+sha2 = "0.10"
+sha1 = "0.10"
+
+# Process-group signaling for cancellable child processes.
+libc = "0.2"
+
+# PNG encoding for the repeatable screenshot renderer only, behind the
+# `screenshot` feature.
+png = { version = "0.18", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+# Deterministic synthetic state. Must never touch a real SDK or AVD home.
+demo = []
+# Enables the reproducible screenshot renderer used by UI checks. It requires a
+# display server: Wayland, X11, or a virtual display such as Xvfb.
+screenshot = ["dep:png"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# GUI iteration benefits from optimized dependencies even in debug builds.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
