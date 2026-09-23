@@ -5,8 +5,10 @@ edition = "2024"
 rust-version = "1.98"
 description = "A native Android virtual device manager."
 license = "MIT"
-# No `repository`/`homepage` yet: publication destinations are not established.
-# See PACKAGING.md. Do not add a URL that does not resolve.
+repository = "https://github.com/Okazakee/avdium"
+# No `homepage`: there is no project site, and a URL that does not resolve is
+# worse than no URL. `publish = false` is deliberate: publishing to crates.io
+# is a separate, authorized decision.
 publish = false
 
 [lib]
