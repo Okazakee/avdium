@@ -1,0 +1,16 @@
+Usage: android emulator create [-h] [--list-profiles] [<profile>]
+Creates a virtual device
+
+Options:
+  -h, --help           Show the help message for this command
+      --list-profiles  lists the device profiles that can be used to create a
+                       device
+
+android options:
+      --sdk=PARAM      Path to the Android SDK
+  -v, --verbose        Enable verbose output for troubleshooting
+  -V, --version        Print version information and exit
+
+Positional Parameters:
+  <profile>  Create a device with a specified profile. Creates the appropriate
+             device for the selected profile (i.e. watch, phone, XR, etc)

@@ -1,0 +1,17 @@
+Usage: android emulator start [-h] [--cold] [--headless] <device>
+Launches the specified virtual device. This command will return when the
+emulator is fully started and ready to use
+
+Options:
+      --cold       Starts the emulator without loading from a snapshot
+      --headless   Starts the emulator without a window
+  -h, --help       Show the help message for this command
+
+android options:
+      --sdk=PARAM  Path to the Android SDK
+  -v, --verbose    Enable verbose output for troubleshooting
+  -V, --version    Print version information and exit
+
+Positional Parameters:
+  <device>  The device (avd) to start. Use "android emulator list" to see
+            available devices

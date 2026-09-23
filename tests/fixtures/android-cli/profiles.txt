@@ -1,0 +1,6 @@
+large_desktop
+medium_desktop
+medium_phone
+medium_tablet
+small_desktop
+small_phone

@@ -1,0 +1,23 @@
+Usage: android sdk install [-h] [--beta] [--canary] [--force]
+                           <package>[@<version>]
+Install SDK packages
+
+Options:
+      --beta                  Include beta packages
+      --canary                Include canary packages
+      --force                 Force downgrading to an older version
+  -h, --help                  Show the help message for this command
+
+sdk options:
+      --ignore-outdated-xmls  When installing or updating packages, do not
+                              update other packages xmls
+      --platform=PARAM        Target platform <os>_<arch> (e.g. linux_x86_64,
+                              mac_arm64, windows_x86), defaults to current host
+
+android options:
+      --sdk=PARAM             Path to the Android SDK
+  -v, --verbose               Enable verbose output for troubleshooting
+  -V, --version               Print version information and exit
+
+Positional Parameters:
+  <package>[@<version>]  The packages to install, <version> defaults to latest

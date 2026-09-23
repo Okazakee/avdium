@@ -1,0 +1,110 @@
+#!/bin/sh
+# Fake Android tool for Avdium tests.
+#
+# This executable never reads or writes a real SDK. It records how it was
+# invoked and then replays a scenario file so tests can exercise success,
+# failure, hangs, prompts, carriage-return progress, invalid UTF-8 and large
+# output without depending on any official tool being installed.
+#
+# Environment:
+#   FAKE_TOOL_NAME   name used for the record file, defaults to argv[0]
+#   FAKE_RECORD_DIR  directory for invocation records; no record if unset
+#   FAKE_SCENARIO    path to a scenario file; exits 0 immediately if unset
+#
+# Scenario directives, one per line:
+#   out <text>       stdout line
+#   err <text>       stderr line
+#   cr <text>        carriage-return progress without a newline
+#   crlf <text>      stdout line terminated with CRLF
+#   prompt <text>    text with no newline, then a short pause
+#   sleep <seconds>  pause, fractional seconds allowed
+#   hang             sleep far longer than any test timeout
+#   invalid          write invalid UTF-8
+#   huge <n>         write n long lines
+#   stdin <prefix>   read stdin and echo it back as <prefix>=<data>
+#   grandchild <f>   start a long-lived background child and record its pid in <f>
+#   exit <code>      stop with this exit code
+set -u
+
+name=${FAKE_TOOL_NAME:-$(basename "$0")}
+record_dir=${FAKE_RECORD_DIR:-}
+
+if [ -n "$record_dir" ]; then
+  mkdir -p "$record_dir" 2>/dev/null || true
+  {
+    printf 'argv0=%s\n' "$(basename "$0")"
+    printf 'name=%s\n' "$name"
+    index=0
+    for argument in "$@"; do
+      index=$((index + 1))
+      printf 'arg%d=%s\n' "$index" "$argument"
+    done
+    printf 'cwd=%s\n' "$(pwd)"
+    for variable in ANDROID_HOME ANDROID_SDK_ROOT ANDROID_AVD_HOME ANDROID_USER_HOME ANDROID_EMULATOR_HOME; do
+      eval "value=\${$variable:-}"
+      printf '%s=%s\n' "$variable" "$value"
+    done
+  } >>"$record_dir/$name.log" 2>/dev/null || true
+fi
+
+scenario=${FAKE_SCENARIO:-}
+[ -n "$scenario" ] || exit 0
+
+# The scenario is read from file descriptor 3 so that commands inside the
+# loop, such as `cat`, still read the real standard input.
+while IFS= read -r line <&3 || [ -n "$line" ]; do
+  case "$line" in
+    '' | '#'*) continue ;;
+  esac
+  directive=${line%% *}
+  if [ "$directive" = "$line" ]; then
+    rest=''
+  else
+    rest=${line#* }
+  fi
+  case "$directive" in
+    out) printf '%s\n' "$rest" ;;
+    err) printf '%s\n' "$rest" >&2 ;;
+    cr)
+      printf '%s\r' "$rest"
+      # A short pause keeps each progress update a separate read, so tests
+      # that assert on progress values are not dependent on pipe coalescing.
+      sleep 0.02
+      ;;
+    crlf) printf '%s\r\n' "$rest" ;;
+    prompt)
+      printf '%s' "$rest"
+      sleep 0.3
+      ;;
+    sleep) sleep "${rest:-0}" ;;
+    hang) sleep 3600 ;;
+    invalid) printf 'before \377\376 after\n' ;;
+    huge)
+      count=${rest:-100}
+      block='0123456789012345678901234567890123456789012345678901234567890123456789'
+      index=0
+      while [ "$index" -lt "$count" ]; do
+        printf '%s\n' "$block"
+        index=$((index + 1))
+      done
+      ;;
+    stdin)
+      payload=$(cat)
+      printf '%s=%s\n' "$rest" "$payload"
+      ;;
+    grandchild)
+      sleep 3600 &
+      printf '%s\n' "$!" >"$rest"
+      sleep 3600
+      ;;
+    exit)
+      exit "${rest:-0}"
+      ;;
+    *)
+      printf 'unknown directive: %s\n' "$line" >&2
+      exit 64
+      ;;
+  esac
+done 3<"$scenario"
+
+exit 0

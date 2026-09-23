@@ -1,0 +1,2 @@
+sdk: $HOME/Android/Sdk
+version: 1.0.16406183

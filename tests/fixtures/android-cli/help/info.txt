@@ -1,0 +1,14 @@
+Usage: android info [-h] [<field>]
+Print environment information including SDK location, connected devices, and
+configuration variables. Use specific fields to narrow the output
+
+Options:
+  -h, --help       Show the help message for this command
+
+android options:
+      --sdk=PARAM  Path to the Android SDK
+  -v, --verbose    Enable verbose output for troubleshooting
+  -V, --version    Print version information and exit
+
+Positional Parameters:
+  <field>  The specific field to print the value of. If omitted print all

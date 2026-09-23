@@ -1,0 +1,14 @@
+Usage: android emulator stop [-h] [<device>]
+Stops the specified virtual device
+
+Options:
+  -h, --help       Show the help message for this command
+
+android options:
+      --sdk=PARAM  Path to the Android SDK
+  -v, --verbose    Enable verbose output for troubleshooting
+  -V, --version    Print version information and exit
+
+Positional Parameters:
+  <device>  The emulator name or serial number to stop. Optional if only one
+            emulator is running
