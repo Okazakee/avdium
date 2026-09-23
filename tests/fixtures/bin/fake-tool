@@ -17,6 +17,7 @@
 #   cr <text>        carriage-return progress without a newline
 #   crlf <text>      stdout line terminated with CRLF
 #   prompt <text>    text with no newline, then a short pause
+#   prompt-err <t>   like `prompt`, written to stderr
 #   sleep <seconds>  pause, fractional seconds allowed
 #   hang             sleep far longer than any test timeout
 #   invalid          write invalid UTF-8
@@ -94,6 +95,10 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     crlf) printf '%s\r\n' "$rest" ;;
     prompt)
       printf '%s' "$rest"
+      sleep 0.3
+      ;;
+    prompt-err)
+      printf '%s' "$rest" >&2
       sleep 0.3
       ;;
     sleep) sleep "${rest:-0}" ;;

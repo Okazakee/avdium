@@ -287,6 +287,35 @@ impl ProcessOutput {
     }
 }
 
+/// A message from one of the child's pipe readers.
+///
+/// Completion travels in band rather than being inferred from the channel
+/// being empty. An empty channel and a finished reader look identical to
+/// `try_recv`, and treating the first as the second discards output.
+enum PipeMessage {
+    /// Bytes read from one of the child's streams.
+    Data(Stream, Vec<u8>),
+    /// The reader reached end of file and has stopped.
+    Finished,
+}
+
+/// Assemble one chunk and record everything it produced.
+fn apply_chunk<F>(
+    assemblers: &mut [LineAssembler; 2],
+    output: &mut OutputBuffer,
+    stream: Stream,
+    chunk: &[u8],
+    on_event: &mut F,
+) where
+    F: FnMut(ProcessEvent),
+{
+    let assembler = &mut assemblers[stream.index()];
+    for event in assembler.push(chunk) {
+        output.record(&event);
+        on_event(event);
+    }
+}
+
 /// Run a command, streaming events to a callback.
 ///
 /// The callback runs on the calling thread while the child's pipes are drained
@@ -350,7 +379,7 @@ where
         StdinMode::Null => {}
     }
 
-    let (sender, receiver) = mpsc::channel::<(Stream, Vec<u8>)>();
+    let (sender, receiver) = mpsc::channel::<PipeMessage>();
     let mut readers = Vec::new();
     if let Some(pipe) = child.stdout.take() {
         readers.push(spawn_reader(pipe, Stream::Stdout, sender.clone()));
@@ -359,6 +388,7 @@ where
         readers.push(spawn_reader(pipe, Stream::Stderr, sender.clone()));
     }
     drop(sender);
+    let reader_count = readers.len();
 
     let mut assemblers = [
         LineAssembler::new(Stream::Stdout),
@@ -372,18 +402,23 @@ where
     let mut force_killed = false;
     let mut last_data = Instant::now();
     let mut drain_deadline: Option<Instant> = None;
+    let mut finished_readers = 0usize;
 
     let poll = Duration::from_millis(20);
     let post_exit_drain = Duration::from_millis(500);
 
     loop {
+        // Drain everything queued. Nothing is discarded: data is assembled and
+        // completion is counted, so a momentarily empty channel is never
+        // mistaken for the end of output.
         let mut received = false;
-        while let Ok((stream, chunk)) = receiver.try_recv() {
-            received = true;
-            let assembler = &mut assemblers[stream.index()];
-            for event in assembler.push(&chunk) {
-                output.record(&event);
-                on_event(event);
+        while let Ok(message) = receiver.try_recv() {
+            match message {
+                PipeMessage::Data(stream, chunk) => {
+                    received = true;
+                    apply_chunk(&mut assemblers, &mut output, stream, &chunk, &mut on_event);
+                }
+                PipeMessage::Finished => finished_readers += 1,
             }
         }
         if received {
@@ -401,11 +436,13 @@ where
             }
         }
 
-        // Report prompts and progress that never end with a newline.
+        // Report prompts and progress that never end with a newline. A partial
+        // is display-only: it reaches the callback but is not retained, so the
+        // final `Line` that `finish` emits for the same text is the only copy
+        // in the retained output.
         if last_data.elapsed() >= options.partial_flush_after {
             for assembler in &mut assemblers {
                 for event in assembler.flush_partial() {
-                    output.record(&event);
                     on_event(event);
                 }
             }
@@ -430,7 +467,7 @@ where
             force_killed = true;
         }
 
-        let readers_done = receiver.try_recv().is_err() && !received;
+        let readers_done = finished_readers >= reader_count;
         let drained = drain_deadline.is_some_and(|deadline| Instant::now() >= deadline);
         if status.is_some() && (drained || readers_done) {
             break;
@@ -450,14 +487,11 @@ where
 
         if status.is_none() || !drained {
             match receiver.recv_timeout(poll) {
-                Ok((stream, chunk)) => {
-                    let assembler = &mut assemblers[stream.index()];
-                    for event in assembler.push(&chunk) {
-                        output.record(&event);
-                        on_event(event);
-                    }
+                Ok(PipeMessage::Data(stream, chunk)) => {
+                    apply_chunk(&mut assemblers, &mut output, stream, &chunk, &mut on_event);
                     last_data = Instant::now();
                 }
+                Ok(PipeMessage::Finished) => finished_readers += 1,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => {}
             }
@@ -522,7 +556,7 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 fn spawn_reader<R>(
     mut pipe: R,
     stream: Stream,
-    sender: mpsc::Sender<(Stream, Vec<u8>)>,
+    sender: mpsc::Sender<PipeMessage>,
 ) -> std::thread::JoinHandle<()>
 where
     R: Read + Send + 'static,
@@ -533,7 +567,10 @@ where
             match pipe.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => {
-                    if sender.send((stream, buffer[..read].to_vec())).is_err() {
+                    if sender
+                        .send(PipeMessage::Data(stream, buffer[..read].to_vec()))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -541,6 +578,8 @@ where
                 Err(_) => break,
             }
         }
+        // Signal completion explicitly, so the receiver never has to guess.
+        let _ = sender.send(PipeMessage::Finished);
     })
 }
 
@@ -616,16 +655,19 @@ impl LineAssembler {
         }]
     }
 
+    /// Emit whatever is left when a stream ends without a newline.
+    ///
+    /// This is the only point at which the trailing text enters retained
+    /// output, because a `Partial` is display-only, so it cannot duplicate.
     fn finish(&mut self) -> Vec<ProcessEvent> {
         if self.pending.is_empty() {
             return Vec::new();
         }
-        if self.partial_reported {
-            self.pending.clear();
-            return Vec::new();
-        }
-        self.pending.clear();
-        Vec::new()
+        let text = self.take_line();
+        vec![ProcessEvent::Line {
+            stream: self.stream,
+            text,
+        }]
     }
 
     fn take_line(&mut self) -> String {
@@ -1084,5 +1126,143 @@ mod tests {
         run_collect(&spec, &RunOptions::default(), &CancellationToken::new()).expect("run");
         let log = record(&scenario, "probe");
         assert!(log.contains(&format!("cwd={}", cwd.path().display())));
+    }
+
+    // --------------------------------------------------------- output loss
+    //
+    // The completion check used to call `receiver.try_recv().is_err()`, which
+    // both consumed and discarded a queued chunk and treated a momentarily
+    // empty channel as end of output. These tests fail against that code.
+
+    #[test]
+    fn output_from_a_child_that_exits_immediately_is_never_lost() {
+        // Repeated because the defect was a race: it needed the child to exit
+        // between two polls with output still queued.
+        let scenario = scenario("probe", "out first\nout second\nexit 0\n");
+        for attempt in 0..50 {
+            let output = run_collect(
+                &scenario.spec,
+                &RunOptions::default(),
+                &CancellationToken::new(),
+            )
+            .expect("run");
+            assert!(output.success);
+            assert_eq!(
+                output.stdout, "first\nsecond\n",
+                "attempt {attempt} lost output"
+            );
+        }
+    }
+
+    #[test]
+    fn output_larger_than_one_read_is_retained_completely() {
+        // 200 lines of 70 characters is about 14 KiB, so it crosses the 8 KiB
+        // read buffer several times.
+        let scenario = scenario("probe", "huge 200\nexit 0\n");
+        let output = run_collect(
+            &scenario.spec,
+            &RunOptions::default(),
+            &CancellationToken::new(),
+        )
+        .expect("run");
+        assert!(output.success);
+        assert!(!output.output_truncated, "14 KiB should not be truncated");
+        assert_eq!(output.stdout.lines().count(), 200);
+        assert_eq!(output.stdout.lines().last().map(str::len), Some(70));
+    }
+
+    #[test]
+    fn output_written_just_before_exit_is_drained_from_the_pipe() {
+        // A pipe holds 64 KiB. Writing more than that and exiting immediately
+        // leaves output in the pipe that the reader must still collect.
+        let scenario = scenario("probe", "huge 1500\nexit 0\n");
+        let options = RunOptions {
+            max_output_bytes: 4 * 1024 * 1024,
+            ..RunOptions::default()
+        };
+        let output = run_collect(&scenario.spec, &options, &CancellationToken::new()).expect("run");
+        assert!(output.success);
+        assert!(!output.output_truncated);
+        assert_eq!(output.stdout.lines().count(), 1500);
+    }
+
+    #[test]
+    fn repeated_runs_produce_identical_output() {
+        let scenario = scenario("probe", "out alpha\nout beta\nerr gamma\nexit 0\n");
+        let first = run_collect(
+            &scenario.spec,
+            &RunOptions::default(),
+            &CancellationToken::new(),
+        )
+        .expect("run");
+        for attempt in 0..20 {
+            let next = run_collect(
+                &scenario.spec,
+                &RunOptions::default(),
+                &CancellationToken::new(),
+            )
+            .expect("run");
+            assert_eq!(next.stdout, first.stdout, "attempt {attempt}");
+            assert_eq!(next.stderr, first.stderr, "attempt {attempt}");
+        }
+    }
+
+    // ------------------------------------------------------- trailing output
+
+    #[test]
+    fn a_final_line_without_a_newline_is_retained_on_stdout() {
+        // The partial is never flushed here, so `finish` is the only thing that
+        // can retain the text. The old `finish` cleared it and returned nothing.
+        let scenario = scenario("probe", "prompt trailing text\nexit 0\n");
+        let options = RunOptions {
+            partial_flush_after: Duration::from_secs(30),
+            ..RunOptions::default()
+        };
+        let output = run_collect(&scenario.spec, &options, &CancellationToken::new()).expect("run");
+        assert!(output.success);
+        assert_eq!(output.stdout, "trailing text\n");
+    }
+
+    #[test]
+    fn a_final_line_without_a_newline_is_retained_on_stderr() {
+        let scenario = scenario("probe", "prompt-err trailing error\nexit 0\n");
+        let options = RunOptions {
+            partial_flush_after: Duration::from_secs(30),
+            ..RunOptions::default()
+        };
+        let output = run_collect(&scenario.spec, &options, &CancellationToken::new()).expect("run");
+        assert!(output.success);
+        assert_eq!(output.stderr, "trailing error\n");
+        assert!(output.stdout.is_empty());
+    }
+
+    #[test]
+    fn a_prompt_that_is_later_terminated_is_retained_exactly_once() {
+        // A partial is display-only. When the newline finally arrives the text
+        // must appear in retained output once, not twice.
+        let scenario = scenario("probe", "prompt Do you accept?\nout yes\nexit 0\n");
+        let mut partials = 0usize;
+        let output = run(
+            &scenario.spec,
+            &RunOptions {
+                partial_flush_after: Duration::from_millis(80),
+                ..RunOptions::default()
+            },
+            &CancellationToken::new(),
+            |event| {
+                if matches!(event, ProcessEvent::Partial { .. }) {
+                    partials += 1;
+                }
+            },
+        )
+        .expect("run");
+        assert!(output.success);
+        assert!(partials >= 1, "the prompt should still reach the callback");
+        assert_eq!(
+            output.stdout.matches("Do you accept?").count(),
+            1,
+            "retained output should contain the prompt once: {:?}",
+            output.stdout
+        );
     }
 }
