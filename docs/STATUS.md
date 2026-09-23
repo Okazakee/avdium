@@ -56,6 +56,16 @@ check that was never run.
 logs and per-resource mutation serialization. Cancellation flips a flag under a
 lock the worker does not hold, so it cannot wait behind the job it cancels.
 
+**Provisioning.** A reviewed pin table in source, a pure planner that
+computes the smallest set of actions to reach a goal, license decisions bound
+to the exact text that was displayed, and an installer that stages inside the
+destination filesystem, verifies size and digest, resolves the archive layout
+rather than assuming it, validates the result, refuses to overwrite an existing
+installation, and records what it did. An existing installation is never
+scheduled for upgrade. The Java already on the machine is reused; a private
+runtime is only proposed, and stays blocked until its exact release and
+checksum are pinned.
+
 **Downloads.** Streaming download with progress, cancellation, size and digest
 verification, and explicit provenance for expected digests. Safe ZIP and
 TAR/GZIP extraction rejecting absolute paths, `..`, symlinks and hardlinks, with
@@ -129,10 +139,12 @@ ready is not a handle to the emulator process.
 
 ## Next concrete task
 
-Create a disposable AVD with a unique name and a dedicated data directory, then
-exercise start, readiness, cold boot, stop and wipe against it, recording the
-emulator and image versions. That is the remaining M1 completion evidence and
-the prerequisite for M3 mutation work.
+Wire the provisioning layer into a Setup surface, then use it to install the
+classic tools and create a disposable AVD with a unique name and a dedicated
+data directory. Exercise start, readiness, cold boot, stop and wipe against it,
+recording the emulator and image versions. That is the remaining M1 completion
+evidence and the prerequisite for M3 mutation work. `docs/ROADMAP.md` owns the
+order after that.
 
 ## Repository state
 

@@ -104,6 +104,11 @@ impl Digest {
             &self.value[..self.value.len().min(16)]
         )
     }
+
+    /// The full labelled form, for records: `sha256:<hex>`.
+    pub fn raw(&self) -> String {
+        format!("{}:{}", self.kind.as_str(), self.value)
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
