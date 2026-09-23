@@ -12,7 +12,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use avdium::app::{AvdiumApp, LaunchOptions};
-use avdium::cli::{Cli, Command};
+use avdium::cli::{Cli, Command, ProvisionCommand};
 use avdium::identity;
 
 fn main() -> ExitCode {
@@ -186,6 +186,22 @@ fn run_report(command: Command, cli: &Cli) -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Command::Provision(command) => run_provision(command, &paths, &providers),
+        Command::Create {
+            name,
+            image,
+            profile,
+            force,
+            dry_run,
+        } => run_create(
+            &paths,
+            &providers,
+            &name,
+            &image,
+            profile.as_deref(),
+            force,
+            dry_run,
+        ),
         Command::Doctor { json, probe } => {
             let sdk_root = paths
                 .sdk
@@ -532,4 +548,272 @@ fn json_option(value: Option<&str>) -> String {
         Some(value) => format!("\"{}\"", escape(value)),
         None => "null".to_owned(),
     }
+}
+
+/// `avdium provision ...`
+fn run_provision(
+    command: ProvisionCommand,
+    paths: &avdium::paths::PathContext,
+    providers: &avdium::providers::ProviderSet,
+) -> ExitCode {
+    match command {
+        ProvisionCommand::Pins => {
+            for pin in avdium::provision::PINS {
+                println!("{}", pin.id);
+                println!("  name: {}", pin.name);
+                println!("  url: {}", pin.url);
+                println!(
+                    "  size: {}",
+                    avdium::provision::install::pin_download_label(pin)
+                );
+                match pin.expected_digest() {
+                    Ok(Some(digest)) => {
+                        println!("  digest: {} ({})", digest.raw(), pin.provenance.label())
+                    }
+                    Ok(None) => println!("  digest: none"),
+                    Err(error) => println!("  digest: unreadable ({error})"),
+                }
+                println!("  archive: {:?}", pin.archive);
+                if let Some(revision) = pin.revision {
+                    println!("  installs as: cmdline-tools/{revision}");
+                }
+                if let Some(note) = pin.note {
+                    println!("  note: {note}");
+                }
+                println!();
+            }
+            ExitCode::SUCCESS
+        }
+        ProvisionCommand::Plan {
+            create_devices,
+            manage_packages,
+            json,
+        } => {
+            let observations = avdium::provision::observe(paths, providers);
+            let goals = avdium::provision::Goals {
+                manage_devices: true,
+                create_devices,
+                manage_packages,
+            };
+            // License steps need the repository catalog, which is fetched by
+            // the setup surface rather than by this reporting command.
+            let plan = avdium::provision::plan::plan(&observations, &goals, &[]);
+            if json {
+                println!("{}", provision_plan_json(&plan));
+            } else {
+                for step in &plan.steps {
+                    println!("[{}] {}: {}", step.status.label(), step.title, step.detail);
+                    if let Some(reason) = &step.blocked_reason {
+                        println!("      blocked: {reason}");
+                    }
+                }
+                println!();
+                println!("{}", plan.summary());
+                if plan.unsized_download_steps() > 0 {
+                    println!(
+                        "{} step(s) do not declare a size yet, so the total is a lower bound.",
+                        plan.unsized_download_steps()
+                    );
+                }
+            }
+            if plan.blocked().next().is_some() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        ProvisionCommand::Install { pin, sdk, dry_run } => {
+            let Some(pin) = avdium::provision::manifest::pin(&pin) else {
+                eprintln!("avdium: unknown pin `{pin}`. Run `avdium provision pins`.");
+                return ExitCode::FAILURE;
+            };
+            let observations = avdium::provision::observe(paths, providers);
+            let Some(sdk_root) = sdk.or(observations.sdk_root) else {
+                eprintln!("avdium: no SDK root. Pass --sdk or set ANDROID_HOME.");
+                return ExitCode::FAILURE;
+            };
+
+            println!("Installing {} into {}", pin.id, sdk_root.display());
+            println!("  from: {}", pin.url);
+            println!(
+                "  size: {}",
+                avdium::provision::install::pin_download_label(pin)
+            );
+            println!("  digest: expected ({})", pin.provenance.label());
+            if pin.digest_is_strong() {
+                println!("  note: the expected digest is weak. Google publishes SHA-1 only.");
+            }
+            if dry_run {
+                println!("dry run: nothing was downloaded.");
+                return ExitCode::SUCCESS;
+            }
+
+            let dirs = avdium::paths::AppDirs::from_process().unwrap_or_else(|| {
+                avdium::paths::AppDirs::from_roots("/tmp", "/tmp", "/tmp", "/tmp")
+            });
+            let records = dirs.data.join("tools");
+            let cancel = avdium::process::CancellationToken::new();
+
+            println!("Downloading and verifying. This can take a while and is not interactive.");
+            let result = avdium::provision::install_pinned(
+                pin,
+                &sdk_root,
+                &records,
+                &avdium::provision::HttpFetcher,
+                &cancel,
+                |stage| println!("  {}", stage.label()),
+            );
+
+            match result {
+                Ok(installed) => {
+                    println!();
+                    println!("Installed to {}", installed.path.display());
+                    println!("  digest: {} (verified)", installed.record.actual_digest);
+                    println!("  provenance: {}", installed.record.digest_provenance);
+                    if let Some(note) = &installed.note {
+                        println!("  note: {note}");
+                    }
+                    println!();
+                    println!("Run `avdium tools` to confirm the tools are now detected.");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("avdium: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+    }
+}
+
+/// `avdium create ...`
+fn run_create(
+    paths: &avdium::paths::PathContext,
+    _providers: &avdium::providers::ProviderSet,
+    name: &str,
+    image: &str,
+    profile: Option<&str>,
+    force: bool,
+    dry_run: bool,
+) -> ExitCode {
+    let installs = paths.cmdline_tools_installs();
+    let Some(avdmanager) = installs.iter().find_map(|install| install.avdmanager()) else {
+        eprintln!(
+            "avdium: avdmanager was not found. Android CLI cannot create a device from a \
+             chosen image, so the classic tools are required."
+        );
+        eprintln!("avdium: run `avdium provision install --pin cmdline-tools` first.");
+        return ExitCode::FAILURE;
+    };
+
+    let Ok(image_id) = avdium::sdk::PackageId::parse(image) else {
+        eprintln!("avdium: `{image}` is not a valid system image package identifier.");
+        return ExitCode::FAILURE;
+    };
+    if !matches!(image_id.kind(), avdium::sdk::PackageKind::SystemImage) {
+        eprintln!(
+            "avdium: `{image}` is not a system image. Avdium will not substitute a different \
+             image or API level."
+        );
+        return ExitCode::FAILURE;
+    }
+
+    let tools = avdium::providers::CmdlineTools {
+        version: installs
+            .iter()
+            .find(|install| install.avdmanager().is_some())
+            .map(|install| install.version.clone())
+            .unwrap_or_else(|| "unknown".to_owned()),
+        bin: avdmanager
+            .parent()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_default(),
+        sdkmanager: None,
+        avdmanager: Some(avdmanager),
+    };
+
+    let mut request =
+        avdium::providers::cmdline_tools::CreateRequest::new(name, image_id).with_force(force);
+    if let Some(profile) = profile {
+        request = request.with_profile(profile);
+    }
+    let Some(spec) = tools.create_spec(&request) else {
+        eprintln!("avdium: the avdmanager adapter could not build the command.");
+        return ExitCode::FAILURE;
+    };
+
+    println!("{}", spec.preview());
+    if dry_run {
+        println!("dry run: nothing was created.");
+        return ExitCode::SUCCESS;
+    }
+
+    // The AVD home is passed explicitly so the device lands where Avdium will
+    // look for it, and never in a tool's own default.
+    let spec = spec
+        .envs(paths.child_env())
+        .env("ANDROID_AVD_HOME", paths.avd_home.clone());
+
+    let cancel = avdium::process::CancellationToken::new();
+    match avdium::process::run_collect(
+        &spec,
+        &avdium::process::RunOptions {
+            timeout: Some(std::time::Duration::from_secs(120)),
+            ..avdium::process::RunOptions::default()
+        },
+        &cancel,
+    ) {
+        Ok(output) if output.success => {
+            println!("Created {name}.");
+            println!("  avd home: {}", paths.avd_home.display());
+            println!("  image: {image}");
+            for line in output
+                .combined()
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+            {
+                println!("  {line}");
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(output) => {
+            eprintln!("avdium: {}", output.describe_failure());
+            for line in output
+                .combined()
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+            {
+                eprintln!("  {line}");
+            }
+            ExitCode::FAILURE
+        }
+        Err(error) => {
+            eprintln!("avdium: the create command could not be run: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn provision_plan_json(plan: &avdium::provision::ProvisionPlan) -> String {
+    let rows: Vec<String> = plan
+        .steps
+        .iter()
+        .map(|step| {
+            format!(
+                "{{\"id\":\"{}\",\"title\":\"{}\",\"status\":\"{}\",\"detail\":\"{}\",\
+                 \"blocked_reason\":{}}}",
+                escape(&step.id),
+                escape(&step.title),
+                step.status.label(),
+                escape(&step.detail),
+                json_option(step.blocked_reason.as_deref())
+            )
+        })
+        .collect();
+    format!(
+        "{{\"steps\":[{}],\"download_bytes\":{},\"unsized_download_steps\":{}}}",
+        rows.join(","),
+        plan.download_bytes(),
+        plan.unsized_download_steps()
+    )
 }

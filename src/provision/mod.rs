@@ -19,6 +19,7 @@
 pub mod consent;
 pub mod install;
 pub mod manifest;
+pub mod observe;
 pub mod plan;
 
 pub use consent::{
@@ -28,4 +29,5 @@ pub use install::{
     Fetcher, HttpFetcher, InstallError, InstalledTool, Stage, ToolRecord, install_pinned,
 };
 pub use manifest::{ArchiveKind, DigestProvenance, PINS, ToolPin};
+pub use observe::observe;
 pub use plan::{Goals, JavaObservation, Observations, ProvisionPlan, Step, StepAction, StepStatus};

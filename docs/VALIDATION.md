@@ -293,6 +293,76 @@ but the association was not inspected with `xprop` or a compositor tool.
 | Which windowing backend winit selected | An X11-specific support claim. |
 | `android sdk list` output for the available (not installed) sections | The available-package picker. Only the installed section was captured in full. |
 
+## 9. End-to-end lifecycle against a disposable SDK
+
+The first real exercise of the whole chain. Everything ran against a
+**disposable SDK** at `/tmp/avdium-e2e` with its own AVD home, using symlinks to
+the real emulator, platform-tools and system-images as read-only inputs. The
+user's own SDK and AVD home were never written to. The disposable tree was
+removed afterwards.
+
+### Provisioning, with a real download
+
+`avdium provision install --pin cmdline-tools --sdk /tmp/avdium-e2e/sdk`:
+
+- Fetched 172.7 MiB from `commandlinetools-linux-16111833_latest.zip`.
+- Verified SHA-1 `e025545c62a8e64c7559119566a569fb1dec5f60` against Google's
+  published metadata. The plan and the tool both label this digest as weak and
+  as coming from the publisher, not from this project.
+- Extracted safely, resolved the archive's real top-level layout, validated
+  that `sdkmanager` and `avdmanager` were present.
+- Promoted to the **versioned** `cmdline-tools/23.0`, refusing to touch a
+  `latest` directory, with executable bits preserved (`0755` on the launchers).
+- Wrote a record naming the URL, expected digest, its provenance, the actual
+  digest and the install path.
+
+`avdium provision plan --create-devices` on the same machine identified exactly
+one missing step and reused everything else: Android CLI, the emulator,
+platform-tools, three installed system images, and the Java already present at
+`/usr/bin/java` (`21.0.11`). Nothing already installed was scheduled for
+upgrade.
+
+### Creation with a chosen image
+
+Android CLI cannot do this, so it went through the classic adapter:
+
+```
+avdmanager create avd -n Avdium_E2E_101996 -k system-images;android-36.1;google_apis;x86_64
+```
+
+The device was created in the disposable AVD home, from the image that was
+asked for, with no substitution. `avdium create --dry-run` printed the same
+argument array first. Avdium's own discovery then listed it correctly.
+
+### Runtime lifecycle
+
+| Step | Result |
+| --- | --- |
+| Launch (`-no-snapshot-load -no-window`) | process started |
+| ADB serial detected | 3 s |
+| `sys.boot_completed` = 1 | 31 s |
+| Identity (`adb -s SERIAL emu avd name`) | `Avdium_E2E_101996`, matching the launched device |
+| Guest properties | model `sdk_gphone64_x86_64`, API 36, release 16 |
+| Stop (`adb -s SERIAL emu kill`) | `OK: killing emulator, bye bye` |
+| `adb devices` after stop | empty |
+| Wipe (`-wipe-data`) | device booted again and stopped cleanly |
+| Delete (`avdmanager delete avd`) | `AVD 'Avdium_E2E_101996' deleted.` |
+| Discovery after delete | device no longer listed |
+
+This validates the exact commands the runtime layer builds, the serial-to-AVD
+mapping it relies on, and the readiness signal it polls.
+
+### Isolation check
+
+After the run: no stray emulator processes, the real AVD home still contained
+exactly the same three companions with their original mtimes (January, April
+and August), and the real SDK still had no `cmdline-tools` directory at all.
+The disposable tree was deleted.
+
+**Still not verified:** the same lifecycle driven from the GUI. The commands are
+proven, but the buttons that submit them have not been exercised against a real
+device.
+
 ## 9. Release build and dynamic dependencies
 
 `cargo build --locked --release` succeeded (329 crates, 1m04s wall). The result

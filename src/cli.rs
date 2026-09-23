@@ -89,6 +89,59 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Provisioning: decide what to install, and install it.
+    #[command(subcommand)]
+    Provision(ProvisionCommand),
+    /// Create a device from a chosen system image, using the classic tools.
+    Create {
+        /// The AVD name.
+        #[arg(long)]
+        name: String,
+        /// The system image package, for example
+        /// `system-images;android-36.1;google_apis;x86_64`.
+        #[arg(long)]
+        image: String,
+        /// The hardware profile to base the device on.
+        #[arg(long)]
+        profile: Option<String>,
+        /// Replace a device with the same name.
+        #[arg(long)]
+        force: bool,
+        /// Print what would happen, without doing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+/// Provisioning subcommands.
+#[derive(Debug, Subcommand)]
+pub enum ProvisionCommand {
+    /// Show what would be installed, and what is already present.
+    Plan {
+        /// Assume the goal of creating devices, not only managing them.
+        #[arg(long)]
+        create_devices: bool,
+        /// Also install and manage SDK packages from Avdium.
+        #[arg(long)]
+        manage_packages: bool,
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Install a reviewed pin.
+    Install {
+        /// The pin identifier, for example `cmdline-tools`.
+        #[arg(long)]
+        pin: String,
+        /// The SDK root to install into.
+        #[arg(long, value_name = "PATH")]
+        sdk: Option<PathBuf>,
+        /// Print what would happen, without downloading anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// List the reviewed pins.
+    Pins,
 }
 
 #[cfg(test)]
