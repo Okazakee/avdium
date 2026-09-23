@@ -46,13 +46,13 @@ The toolchain is pinned in `rust-toolchain.toml`. `Cargo.lock` is committed.
 ## Checks
 
 ```sh
-cargo fmt --all --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets
-cargo test --locked --all-targets --all-features
-RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps
+./scripts/check.sh
 ```
+
+That is the canonical set, and it is what CI runs. It is defined once, in
+`scripts/check.sh`, so this file, `CONTRIBUTING.md`, `AGENTS.md` and the CI
+workflow cannot drift apart. To install the hooks that call it, run
+`./scripts/install-hooks.sh`.
 
 See `CONTRIBUTING.md` for the contribution workflow and `AGENTS.md` for
 operational constraints.

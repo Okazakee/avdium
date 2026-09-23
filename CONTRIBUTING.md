@@ -10,16 +10,41 @@ installs it automatically. `Cargo.lock` is committed; use `--locked` in checks.
 Run the full set before opening a change:
 
 ```sh
-cargo fmt --all --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets
-cargo test --locked --all-targets --all-features
-RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps
+./scripts/check.sh
 ```
 
-CI runs the same commands. Local hooks and CI should call the same underlying
-commands to avoid drift.
+That script is the single definition of the check set. CI and the pre-push hook
+both call it, so the commands are not restated here.
+
+It begins with `./scripts/check-repo.sh`, the repository contract. That asserts
+that required files exist, that no local machine state has been committed (a
+developer home path, a `.env`, a credential, or captured license text), that
+every action is pinned to a commit SHA, and that documented version facts agree
+with `Cargo.toml`. `./scripts/check-repo.sh --self-test` proves the check can
+fail, by planting each violation in a throwaway repository and asserting it is
+rejected.
+
+## Local hooks
+
+```sh
+./scripts/install-hooks.sh
+```
+
+installs the tracked hooks by setting `core.hooksPath` locally. `pre-commit`
+runs the contract and `rustfmt`; `pre-push` runs the full set. The installer
+writes local configuration only. It never writes global configuration and never
+touches shell startup files.
+
+Hooks are feedback, not authority: `git commit --no-verify` bypasses them. CI is
+the authority, and a green hook proves less than a green CI run.
+
+## Dependency policy
+
+`deny.toml` holds the policy and CI enforces it. RustSec advisories fail the
+build. Licenses, duplicate versions and source policy report without failing
+until the allow-list has been reviewed further. The allow-list records why each
+entry is present; several are font or data licenses reached through egui and
+rustls rather than anything this project chose directly.
 
 ## Test layers
 
@@ -80,7 +105,10 @@ If you add a directive, add it to `render_scenario_script` in
 - Behavioral changes need deterministic tests in the same change.
 - Regression fixes should include a test that fails before the fix.
 - Assert meaningful behavior and invariants, not existence or truthiness.
-- Ordinary tests use temporary paths and no network.
+- Ordinary tests use temporary paths, fake tools and an empty `PATH`. That is
+  structural rather than sandboxed: there is no network namespace, so the
+  guarantee is that no test is written to reach the network, not that it is
+  prevented from doing so.
 - Network and real-emulator tests are explicit opt-in or ignored integration
   tests. They must never run by default.
 - Tests must not accidentally fall through to real `android`, `sdkmanager`,

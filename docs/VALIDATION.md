@@ -154,8 +154,8 @@ All of the following were run in the repository and passed:
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --locked --all-targets -- -D warnings` | clean |
 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | clean |
-| `cargo test --locked --all-targets` | 264 passed, 0 failed, 1 ignored |
-| `cargo test --locked --all-targets --all-features` | 265 passed, 0 failed, 1 ignored |
+| `cargo test --locked --all-targets` | 326 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
+| `cargo test --locked --all-targets --all-features` | 327 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
 | `RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps` | clean |
 
 The single ignored test is `real_download_records_identity_and_size`, an
@@ -164,11 +164,15 @@ the Android CLI launcher downloaded as `5067072` bytes with SHA-256
 `1e7f2da1bb678bdb3c78a20b421a276f6b9eb639f0b6a17d46fa02f01a0b67b4`, matching
 the brief's verified pin exactly.
 
-The default test run uses no network and temporary paths. Tests never fall
-through to real tools: `tests/fixtures/bin/fake-tool` records its arguments,
-environment and working directory, and simulates success, failure, hangs,
-prompts, carriage-return progress, invalid UTF-8, large output and grandchildren
-that must be killed with the process group.
+The default test run reaches no network, and this is structural rather than
+sandboxed. There is no network namespace and no proxy interception. What is
+true is that no default test is written to make a request: unit tests use
+temporary paths and captured output, and the integration tests run the binary
+with fake tools and an empty `PATH`. Tests never fall through to real tools:
+`tests/fixtures/bin/fake-tool` records its arguments, environment and working
+directory, and simulates success, failure, hangs, prompts, carriage-return
+progress, invalid UTF-8, large output and grandchildren that must be killed
+with the process group.
 
 ## 6. Read-only behavior against the real host
 
@@ -338,7 +342,7 @@ nothing again.
 **Result.** 28 integration tests, none ignored, **0 failures in 60 consecutive
 runs** under parallel load.
 
-## 9. End-to-end lifecycle against a disposable SDK
+## 10. End-to-end lifecycle against a disposable SDK
 
 The first real exercise of the whole chain. Everything ran against a
 **disposable SDK** at `/tmp/avdium-e2e` with its own AVD home, using symlinks to
@@ -408,7 +412,7 @@ The disposable tree was deleted.
 proven, but the buttons that submit them have not been exercised against a real
 device.
 
-## 9. Release build and dynamic dependencies
+## 11. Release build and dynamic dependencies
 
 `cargo build --locked --release` succeeded (329 crates, 1m04s wall). The result
 is a 13.4 MB stripped `ELF 64-bit LSB pie executable` that reports
@@ -437,7 +441,7 @@ unvalidated: no package has been built or installed. The release build also
 confirms that a Rust binary is not dependency-free, and that Java and QEMU are
 correctly absent from the dependency set.
 
-## 10. Fixture normalization
+## 12. Fixture normalization
 
 Captured tool output is verbatim except for one thing: **absolute home paths are
 replaced with `$HOME`**. A real capture contained the developer's home
@@ -446,7 +450,7 @@ fixtures and the assertions that read them. Everything else in a fixture,
 including spacing, column widths and trailing whitespace, is exactly as the tool
 printed it.
 
-## 10. Fixtures captured in this session
+## 13. Fixtures captured in this session
 
 All under `tests/fixtures/`, from the installed tools on this host:
 
@@ -460,3 +464,73 @@ All under `tests/fixtures/`, from the installed tools on this host:
 
 `tests/fixtures/bin/fake-tool` is constructed, not captured, and is documented
 as such in its own header comment.
+
+## 14. Verification, security and release conventions
+
+An audit of four sibling repositories (`precall`, `pi-harness-config`,
+`minepanel-backend`, `blurkit`) produced a set of conventions worth adopting.
+Adopting them surfaced three defects. The decisions, including what was
+rejected and why, are recorded in `docs/decisions/0006-ci-conventions.md`.
+
+### What was added
+
+- `scripts/check.sh`, the single definition of the check set. It replaces the
+  same six commands restated in `README.md`, `CONTRIBUTING.md`, `AGENTS.md` and
+  `.github/workflows/ci.yml`.
+- `scripts/check-repo.sh`, the repository contract, with a `--self-test` mode.
+- `.githooks/pre-commit` and `.githooks/pre-push`, installed by
+  `scripts/install-hooks.sh` through local `core.hooksPath` only.
+- `deny.toml`, `.github/dependabot.yml`, `SECURITY.md`, `.github/CODEOWNERS`.
+- CI jobs `contract`, `checks`, `dependency-policy` and `workflow-security`.
+
+### Defects found and fixed
+
+**Output was lost from children that exited immediately.** `src/process.rs`
+decided a child had stopped producing output by calling
+`receiver.try_recv().is_err()`. That call consumes and discards a queued chunk,
+and cannot distinguish a momentarily empty channel from a closed one.
+Completion now travels in band as a `PipeMessage::Finished` message. Seven
+regression tests cover it. With the old expression restored they fail, four of
+them, including `operations::tests::subprocess_output_is_streamed_into_the_job_log`,
+which was failing in a non-test code path rather than only in a fixture.
+
+**A trailing line without a newline was dropped.** `LineAssembler::finish`
+cleared the pending buffer and returned nothing. `Partial` events are now
+display-only, and `finish` emits the tail as a `Line`, so a prompt that is later
+terminated by a newline is retained exactly once instead of twice.
+
+**ZIP extraction never checked for links.** `extract_zip` accepted an entry
+carrying `S_IFLNK` in its Unix mode and wrote it out as a regular file, while
+`extract_tar_gz` rejected links outright and the module documentation claimed
+both paths did. The ZIP path now rejects them as well. The test builds its
+fixture with `ZipWriter::add_symlink`, because `unix_permissions` masks to
+`mode & 0o777` and cannot set the bit.
+
+### A control that enforced nothing, removed
+
+CI carried a job named "Tests are offline" that set `AVDIUM_OFFLINE=1`. No file
+in `src/` or `tests/` read that variable, so the job could not fail for the
+reason it claimed. It was deleted rather than propped up, and the two documents
+that asserted the guarantee now state what is actually true.
+
+### Dependency policy findings
+
+The first real run of `cargo deny check` failed on licenses. Five had not been
+considered: `BSL-1.0` through `arboard`'s Windows-only dependencies, `OFL-1.1`
+and `Ubuntu-font-1.0` through egui's bundled fonts, `CDLA-Permissive-2.0`
+through the rustls root certificate bundle, and `MPL-2.0` through `option-ext`.
+The first four are permissive. `MPL-2.0` is weak copyleft and is acceptable
+only while that crate is consumed unmodified; the obligation is recorded in
+`deny.toml` itself. All four checks now pass.
+
+### Executed
+
+| Command | Result |
+| --- | --- |
+| `./scripts/check.sh` | exit 0 |
+| `./scripts/check-repo.sh --self-test` | 2 cases accepted, 5 violations detected |
+| `cargo deny check` (0.20.2, published checksum verified) | advisories ok, bans ok, licenses ok, sources ok |
+| `./scripts/install-hooks.sh` | installs; refuses to replace a different `core.hooksPath` |
+
+Not executed: the new CI jobs, because this work has not been pushed yet. The
+end-to-end tests remain opt-in and unrun.

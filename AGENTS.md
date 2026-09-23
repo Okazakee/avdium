@@ -45,13 +45,11 @@ diagnostics, packaging and release filenames. The application id is
 Run the repository checks before declaring work done:
 
 ```sh
-cargo fmt --all --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets
-cargo test --locked --all-targets --all-features
-RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps
+./scripts/check.sh
 ```
+
+That script is the single definition of the check set. CI and the pre-push hook
+call the same file, so do not restate the commands here.
 
 Do not weaken lints, delete tests or remove assertions to obtain green checks.
 Distinguish compiled, automated-tested, visually inspected and manually

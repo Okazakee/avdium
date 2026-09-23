@@ -79,16 +79,31 @@ command previews, and disabled controls that always carry a reason.
 module performs no I/O at all, so it cannot reach a real SDK; a test asserts
 that no demo path escapes `/demo`.
 
+## Tests
+
+Three layers, each proving something the others cannot. Unit tests live beside
+the code and cover parsers, path resolution, planning, consent, extraction and
+process mechanics against captured real output. `tests/cli_reporting.rs` drives
+the built binary as a black box with fake tools and a disposable SDK, on an
+empty `PATH` so no test can reach a real tool. `tests/e2e_lifecycle.rs` is
+opt-in, ignored by default, and is the only layer that downloads anything or
+boots a device. The fake-tool fixture inlines its scenario when the fixture is
+created, so no test reads a scenario file at run time.
+
 ## Checks run
+
+`./scripts/check.sh` is the canonical set, and it is what CI runs. It passed.
 
 | Command | Result |
 | --- | --- |
+| `./scripts/check-repo.sh` | contract clean; self-test passed |
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --locked --all-targets -- -D warnings` | clean |
 | `cargo clippy --locked --all-targets --all-features -- -D warnings` | clean |
-| `cargo test --locked --all-targets` | 264 passed, 0 failed, 1 ignored |
-| `cargo test --locked --all-targets --all-features` | 265 passed, 0 failed, 1 ignored |
+| `cargo test --locked --all-targets` | 326 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
+| `cargo test --locked --all-targets --all-features` | 327 unit passed, 1 ignored; 28 integration passed; 2 end-to-end ignored |
 | `RUSTDOCFLAGS='-D warnings' cargo doc --locked --all-features --no-deps` | clean |
+| `cargo deny check` (advisories, bans, licenses, sources) | all ok |
 | `avdium --version`, `paths`, `tools`, `devices`, `doctor --probe`, `capabilities` | exercised against the real host, read-only |
 | GUI launch | window opened on the live Wayland session; 5 screenshots captured |
 
@@ -148,6 +163,7 @@ order after that.
 
 ## Repository state
 
-Linear history on `main`. Nothing is pushed, tagged or published. `publish =
-false` in `Cargo.toml` and the release workflow requires an explicit
-authorization input, so publication cannot happen by accident.
+Linear history on `main`, published at `https://github.com/Okazakee/avdium`.
+Nothing is tagged, packaged or released. `publish = false` in `Cargo.toml` and
+the release workflow requires an explicit authorization input, so publication
+cannot happen by accident.
