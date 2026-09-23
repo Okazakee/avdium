@@ -536,6 +536,14 @@ pub fn extract_zip(
         let mode = entry.unix_mode();
         let is_directory = entry.is_dir();
 
+        // A ZIP entry can carry the symlink bit in its Unix mode. Writing such
+        // an entry with `File::create` would produce a regular file rather than
+        // a link, which neutralises it, but the TAR path rejects links outright
+        // and both paths should hold the same invariant.
+        if mode.is_some_and(|mode| mode & 0o170000 == 0o120000) {
+            return Err(ExtractionError::LinkNotAllowed { entry: raw_name });
+        }
+
         if let Some(first) = relative.components().next()
             && let Component::Normal(name) = first
         {
@@ -791,6 +799,30 @@ mod tests {
                     .next()
                     .is_none()
         );
+    }
+
+    #[test]
+    fn zip_extraction_rejects_symlink_entries() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp.path().join("links.zip");
+        {
+            let file = std::fs::File::create(&archive_path).expect("create");
+            let mut writer = zip::ZipWriter::new(file);
+            // `unix_permissions` masks to `mode & 0o777`, so the symlink bit can
+            // only be set through `add_symlink`. Real archivers do set it, and
+            // the crate's own reader materialises the link.
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+            writer
+                .add_symlink("escape", "/etc/passwd", options)
+                .expect("add_symlink");
+            writer.finish().expect("finish");
+        }
+
+        let destination = temp.path().join("out");
+        let error = extract_zip(&archive_path, &destination, &ExtractionLimits::default())
+            .expect_err("a symlink entry must be rejected");
+        assert!(matches!(error, ExtractionError::LinkNotAllowed { .. }));
+        assert!(!destination.join("escape").exists());
     }
 
     #[test]
