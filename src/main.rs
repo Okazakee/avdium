@@ -356,9 +356,18 @@ fn probe_tools(
             &["info", "--no-metrics"],
             std::time::Duration::from_secs(15),
         )
-        .ok()
-        .and_then(|output| avdium::providers::android_cli::parse_info(&output.stdout).version)
-        .unwrap_or_else(|| "not available".to_owned());
+        .map(|output| {
+            avdium::providers::android_cli::parse_info(&output.stdout)
+                .version
+                .unwrap_or_else(|| {
+                    format!(
+                        "output could not be read (exit {:?}, {} bytes)",
+                        output.exit_code,
+                        output.stdout.len()
+                    )
+                })
+        })
+        .unwrap_or_else(|error| format!("could not be run: {error}"));
         rows.push((
             "android_cli".to_owned(),
             format!("{value} ({})", tool.program.display()),

@@ -26,13 +26,13 @@
 #   exit <code>      stop with this exit code
 set -u
 
-name=${FAKE_TOOL_NAME:-$(basename "$0")}
+name=${FAKE_TOOL_NAME:-${0##*/}}
 record_dir=${FAKE_RECORD_DIR:-}
 
 if [ -n "$record_dir" ]; then
   mkdir -p "$record_dir" 2>/dev/null || true
   {
-    printf 'argv0=%s\n' "$(basename "$0")"
+    printf 'argv0=%s\n' "${0##*/}"
     printf 'name=%s\n' "$name"
     index=0
     for argument in "$@"; do
@@ -47,11 +47,31 @@ if [ -n "$record_dir" ]; then
   } >>"$record_dir/$name.log" 2>/dev/null || true
 fi
 
-scenario=${FAKE_SCENARIO:-}
-[ -n "$scenario" ] || exit 0
+# The scenario comes from the environment when it is supplied that way, which
+# involves no file at all in the read path. Otherwise it is read from a named
+# file or from a directory by tool name.
+scenario_file=${FAKE_SCENARIO:-}
+if [ -z "$scenario_file" ] && [ -n "${FAKE_SCENARIO_DIR:-}" ]; then
+  candidate="$FAKE_SCENARIO_DIR/$name.scenario"
+  [ -f "$candidate" ] && scenario_file="$candidate"
+fi
 
-# The scenario is read from file descriptor 3 so that commands inside the
-# loop, such as `cat`, still read the real standard input.
+if [ -n "${FAKE_SCENARIO_TEXT:-}" ]; then
+  # A here-document on a dedicated descriptor keeps standard input free for the
+  # `stdin` directive.
+  exec 3<<EOF
+$FAKE_SCENARIO_TEXT
+EOF
+elif [ -n "$scenario_file" ]; then
+  if [ ! -r "$scenario_file" ]; then
+    printf 'fake-tool: scenario is not readable: %s\n' "$scenario_file" >&2
+    exit 70
+  fi
+  exec 3<"$scenario_file"
+else
+  exit 0
+fi
+
 while IFS= read -r line <&3 || [ -n "$line" ]; do
   case "$line" in
     '' | '#'*) continue ;;
@@ -105,6 +125,6 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
       exit 64
       ;;
   esac
-done 3<"$scenario"
+done
 
 exit 0
