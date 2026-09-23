@@ -240,13 +240,45 @@ the no-SDK, existing-devices, broken-device, long-name and demo states.
 
 **Renderer implemented:** a windowed renderer that requires a display server
 (Wayland, X11, or a virtual display such as `Xvfb`). A truly headless renderer
-is not implemented. The screenshots above were captured on a real session, not
-under `Xvfb`, so Xvfb support is not verified.
+is not implemented.
 
-**Not verified:** which windowing backend winit actually selected. Both
-`WAYLAND_DISPLAY=wayland-0` and `DISPLAY=:0` are present, so both are
-available; the choice was not independently confirmed. X11-only operation is
-therefore unverified.
+### Backend matrix
+
+winit 0.30.13 selects Wayland when `WAYLAND_DISPLAY` or `WAYLAND_SOCKET` is set,
+and X11 when only `DISPLAY` is set. Both paths were exercised functionally by
+capturing the full screenshot sequence on each:
+
+| Session | Invocation | Result |
+| --- | --- | --- |
+| Native Wayland | `WAYLAND_DISPLAY=wayland-0 DISPLAY=:0` | 5 PNGs, `devices.png` 106.7 KB |
+| XWayland / X11 | `env -u WAYLAND_DISPLAY DISPLAY=:0` | 5 PNGs, `devices.png` 95.9 KB |
+
+Both runs rendered every screen and wrote valid images, and the different file
+size confirms the two runs really did take different rendering paths rather
+than one silently falling back.
+
+A no-display run fails closed with an actionable message rather than a panic:
+
+```
+$ env -u WAYLAND_DISPLAY -u DISPLAY avdium --demo
+avdium: the window could not be opened: winit EventLoopError: ... neither
+WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set.
+avdium: this build needs a display server. ...
+avdium: the reporting subcommands (paths, tools, doctor, devices,
+capabilities) work without a display.
+```
+
+**Not verified:** a plain Xorg session (no Wayland compositor), because `Xvfb`
+is not installed and installing a package would be a host change outside this
+task's authorization. XWayland exercises the X11 backend but not an Xorg
+server's own input, scaling or window-manager behavior.
+
+**Not verified:** whether the X11 `WM_CLASS` and the Wayland `app_id` actually
+match `dev.okazakee.Avdium` at runtime. Both are set from one constant in
+`src/main.rs` and the desktop entry uses `StartupWMClass=dev.okazakee.Avdium`,
+but the association was not inspected with `xprop` or a compositor tool.
+
+**Not verified:** fractional scaling and HiDPI on either backend.
 
 ## 8. Not collected, and what each gap blocks
 

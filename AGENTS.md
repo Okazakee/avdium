@@ -59,12 +59,16 @@ exercised outcomes, and say which one a claim rests on.
 
 ## Documentation ownership
 
-- `PRODUCT.md` owns product scope.
+- `PRODUCT.md` owns product scope and the guardrails for product claims.
+- `docs/ROADMAP.md` owns the ordered plan, the goals behind the ordering, and
+  the milestone exit criteria.
 - `CONTRIBUTING.md` owns checks and contribution workflow.
 - `PACKAGING.md` owns packaging and release mechanics.
 - `docs/STATUS.md` owns the short current-state summary.
-- `docs/VALIDATION.md` owns executed M0 evidence.
+- `docs/VALIDATION.md` owns executed validation evidence.
 - `docs/decisions/` owns short architecture decision records.
 - Source and tests are authoritative for implementation behavior.
 
-Do not duplicate volatile implementation facts across documents.
+Do not duplicate volatile implementation facts across documents. When the plan
+changes, update `docs/ROADMAP.md` rather than scattering the intent across
+commit messages.
