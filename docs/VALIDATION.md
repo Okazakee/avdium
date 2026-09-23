@@ -293,6 +293,51 @@ but the association was not inspected with `xprop` or a compositor tool.
 | Which windowing backend winit selected | An X11-specific support claim. |
 | `android sdk list` output for the available (not installed) sections | The available-package picker. Only the installed section was captured in full. |
 
+## 9. Test layers and a fixture defect that was fixed
+
+The repository originally had 399 unit tests across 26 modules but **no
+integration tests** (`tests/` held only fixtures) and **no committed
+end-to-end test**. The lifecycle verification had been done by hand.
+
+Added:
+
+- `tests/common/mod.rs`: a disposable sandbox with an SDK, an AVD home, a user
+  home and Avdium's own XDG directories under one temporary tree, with an empty
+  directory on `PATH` so no test can reach a real `android`, `sdkmanager`,
+  `avdmanager`, `emulator`, `adb` or `java`.
+- `tests/cli_reporting.rs`: 28 integration tests running the built binary as a
+  black box.
+- `tests/e2e_lifecycle.rs`: 2 opt-in tests reproducing the disposable-SDK
+  lifecycle.
+
+Building the integration layer exposed a defect **in the fixture**, which is
+recorded here because it is the kind of thing that gets papered over:
+
+**Symptom.** The fake tool, executed as a subprocess, intermittently produced no
+output at all with exit status 0. Roughly one run in four under parallel load.
+
+**Wrong turns.** Five hypotheses were tested and discarded: shell quoting in a
+generated wrapper script, a `basename` call that the deliberately empty `PATH`
+made unavailable (a real bug, fixed), write-then-execute races, copies versus
+symlinks for the fake tool, and concurrency itself. A retry was added at one
+point and then **removed**, because a retry would have turned the suite green
+while leaving the defect in place. Four tests were briefly quarantined with a
+recorded reason.
+
+**Actual cause.** The fake tool read its scenario from a file written moments
+earlier, and that read sometimes returned only the first line. The measurement
+that settled it was the tool reporting how many directives it had actually
+read, plus the byte count in the failure: 18 bytes, exactly one directive.
+
+**Fix.** The fixture now generates each fake tool with its scenario **inlined as
+literal shell statements** at fixture-creation time, so the tool reads nothing at
+run time. This removes the class of problem rather than masking it. An
+unsupported directive is now a hard error, so a fixture cannot silently do
+nothing again.
+
+**Result.** 28 integration tests, none ignored, **0 failures in 60 consecutive
+runs** under parallel load.
+
 ## 9. End-to-end lifecycle against a disposable SDK
 
 The first real exercise of the whole chain. Everything ran against a

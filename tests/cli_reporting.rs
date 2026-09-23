@@ -5,23 +5,6 @@
 //! output, all together, with fake tools and temporary directories so nothing
 //! can reach a real SDK or the network.
 //!
-//! ## Known fixture instability
-//!
-//! Four tests below are marked `#[ignore]`. They assert on output produced by
-//! a **fake tool executed as a subprocess**. Under load that subprocess
-//! intermittently produces no output at all, roughly one run in four, in a way
-//! that is not yet isolated. The cause is in the test fixture, not in Avdium:
-//! the same code paths are exercised end to end against real tools by
-//! `tests/e2e_lifecycle.rs`, and the parsing itself is covered by unit tests
-//! against captured real output.
-//!
-//! They are ignored rather than retried, because a retry would hide the
-//! problem instead of recording it. Run them with:
-//!
-//! ```sh
-//! cargo test --test cli_reporting -- --ignored
-//! ```
-
 mod common;
 
 use common::{
@@ -139,7 +122,6 @@ fn devices_json_is_valid_and_complete() {
 }
 
 #[test]
-#[ignore = "fixture instability: see the note at the top of this file"]
 fn tools_detects_the_fake_providers_and_runs_them() {
     let sandbox = sandbox_with_tools();
     let output = sandbox.run(&["tools"]);
@@ -182,7 +164,6 @@ fn doctor_without_probe_does_not_execute_any_tool() {
 }
 
 #[test]
-#[ignore = "fixture instability: see the note at the top of this file"]
 fn doctor_with_probe_executes_the_tools_and_reports_versions() {
     let sandbox = sandbox_with_tools();
     sandbox.add_device("Test_Device", DEVICE_CONFIG);
@@ -472,7 +453,6 @@ fn a_missing_sdk_is_reported_rather_than_failing() {
 }
 
 #[test]
-#[ignore = "fixture instability: see the note at the top of this file"]
 fn the_emulator_accel_check_is_parsed_when_the_tool_reports_it() {
     // The acceleration envelope on its own, so the parser sees exactly what a
     // real `-accel-check` prints.
@@ -489,7 +469,6 @@ fn the_emulator_accel_check_is_parsed_when_the_tool_reports_it() {
 }
 
 #[test]
-#[ignore = "fixture instability: see the note at the top of this file"]
 fn the_fake_android_cli_scenario_is_used_for_info() {
     let sandbox = Sandbox::new();
     sandbox.install_fake_android_cli(ANDROID_CLI_INFO_SCENARIO);

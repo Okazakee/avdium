@@ -58,13 +58,22 @@ AVDIUM_E2E=1 cargo test --test e2e_lifecycle -- --ignored --test-threads=1
 Run them on a machine with no other emulator running, because they inspect the
 ADB device list.
 
-### Known fixture instability
+### Writing a fake tool
 
-Four integration tests are marked `#[ignore]` with a reason. They assert on
-output produced by a fake tool executed as a subprocess, and under load that
-subprocess intermittently produces nothing, in a way that is not yet isolated.
-The cause is in the fixture, not in Avdium. Do not paper over it with retries:
-either isolate the cause or leave them ignored and say so.
+The integration fixture generates each fake tool as a self-contained script with
+its scenario **inlined at fixture-creation time**, so the tool reads nothing at
+run time. This is deliberate. An earlier version wrote a scenario file and had
+the tool read it, and under parallel load that read intermittently returned only
+the first line, producing an empty tool with a zero exit status. Inlining
+removed the class of problem instead of retrying around it.
+
+Only `out`, `err` and `exit` are supported by the generator, and an unsupported
+directive is a hard error, so a fixture cannot silently do nothing. Unit tests
+that need the richer directives use `tests/fixtures/bin/fake-tool` with a
+scenario file, where there is no parallel-execution pressure.
+
+If you add a directive, add it to `render_scenario_script` in
+`tests/common/mod.rs`.
 
 ## Tests
 
