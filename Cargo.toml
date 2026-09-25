@@ -67,7 +67,7 @@ flate2 = "1"
 tar = "0.4"
 
 # Integrity checks for downloaded artifacts.
-sha2 = "0.10"
+sha2 = "0.11"
 sha1 = "0.10"
 
 # Process-group signaling for cancellable child processes.
