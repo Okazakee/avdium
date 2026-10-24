@@ -68,7 +68,7 @@ tar = "0.4"
 
 # Integrity checks for downloaded artifacts.
 sha2 = "0.10"
-sha1 = "0.10"
+sha1 = "0.11"
 
 # Process-group signaling for cancellable child processes.
 libc = "0.2"
